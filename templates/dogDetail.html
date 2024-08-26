@@ -1,0 +1,49 @@
+<div class="dog-detail">
+    <img src="{photo}" alt="{name}" class="dog-photo">
+    <h2>{name}</h2>
+    <p>Data de Nascimento: {birthdate}</p>
+    <p>Microchip: {microchip}</p>
+    <p>Gênero: {gender}</p>
+    <p>Cor: {color}</p>
+    <p>Peso: {weight}</p>
+    <p>Raça: {breed}</p>
+    <p>Agressividade: {aggressiveness}</p>
+    <p>Pelagem: {coat}</p>
+    <h3>Tutor</h3>
+    <p>Nome: {owner_name}</p>
+    <p>Endereço: {owner_address}</p>
+    <p>Celular: {owner_phone}</p>
+    <p>E-mail: {owner_email}</p>
+    <div class="tabs">
+        <button class="tablinks" onclick="openTab(event, 'Vaccinations')">Vacinas</button>
+        <button class="tablinks" onclick="openTab(event, 'Medications')">Medicações</button>
+        <button class="tablinks" onclick="openTab(event, 'Examinations')">Exames</button>
+        <button class="tablinks" onclick="openTab(event, 'Pedigree')">Pedigree</button>
+    </div>
+    <div id="Pedigree" class="tabcontent">
+        <h3>Pedigree</h3>
+        <p>Registration Number: {pedigree_registration_number}</p>
+        <p>Kennel Club: {pedigree_kennel_club}</p>
+        <p>Registration Date: {pedigree_registration_date}</p>
+        <h4>Paternal Lineage</h4>
+        <p>Father's Name: {paternal_name}</p>
+        <p>Father's Color: {paternal_color}</p>
+        <p>Father's Registration Number: {paternal_registration_number}</p>
+        <h4>Maternal Lineage</h4>
+        <p>Mother's Name: {maternal_name}</p>
+        <p>Mother's Color: {maternal_color}</p>
+        <p>Mother's Registration Number: {maternal_registration_number}</p>
+    </div>
+    <div id="Vaccinations" class="tabcontent">
+        <h3>Vacinas</h3>
+        {vaccinations}
+    </div>
+    <div id="Medications" class="tabcontent">
+        <h3>Medicações</h3>
+        {medications}
+    </div>
+    <div id="Examinations" class="tabcontent">
+        <h3>Exames</h3>
+        {examinations}
+    </div>
+</div>
