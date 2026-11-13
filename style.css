@@ -108,3 +108,13 @@ h1 {
     display: block;
 }
 
+
+.location-notification {
+    margin: 20px;
+    padding: 16px 20px;
+    background: white;
+    border-radius: 10px;
+}
+
+#location-status[data-state="error"] { color: #a11; }
+#location-status[data-state="sent"] { color: #176b34; }

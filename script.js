@@ -92,50 +92,29 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     ];
 
-    function sendLocationEmail(dogOwnerEmail, dogOwnerName, dogName, location, locationType) {
-        const templateParams = {
-            to_name: dogOwnerName,
-            email_to: dogOwnerEmail,
-            location: location || '',
-            location_type: locationType || '',
-            dog_name: dogName
-        };
-        emailjs.send('service_dogemail', 'template_dogemail', templateParams)
-            .then(function(response) {
-                console.log('E-mail enviado com sucesso!', response.status, response.text);
-            }, function(error) {
-                console.log('Falha ao enviar e-mail...', error);
-            });
-    }
-
     function getLocationAndSendEmail(dogOwnerEmail, dogOwnerName, dogName) {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                function(position) {
-                    const { latitude, longitude } = position.coords;
-                    const location = `${latitude},${longitude}`;
-                    sendLocationEmail(dogOwnerEmail, dogOwnerName, dogName, location, 'exata');
-                },
-                function() {
-                    getApproximateLocation(dogOwnerEmail, dogOwnerName, dogName);
-                }
-            );
-        } else {
-            getApproximateLocation(dogOwnerEmail, dogOwnerName, dogName);
+        const status = document.getElementById('location-status');
+        const retry = document.getElementById('retry-location');
+        let send;
+        if (window.emailjs) {
+            window.emailjs.init({ publicKey: '-5x7LOKtJUEZZVEH2' });
+            send = window.emailjs.send.bind(window.emailjs);
         }
-    }
-
-    function getApproximateLocation(dogOwnerEmail, dogOwnerName, dogName) {
-        fetch('https://ipinfo.io/json?token=6114f95e85046c')
-            .then(response => response.json())
-            .then(data => {
-                const [latitude, longitude] = data.loc.split(',');
-                const approxLocation = `${latitude},${longitude}`;
-                sendLocationEmail(dogOwnerEmail, dogOwnerName, dogName, approxLocation, 'aproximada');
-            })
-            .catch(error => {
-                console.log('Error fetching approximate location:', error);
-            });
+        const notifier = window.createLocationNotifier({
+            geolocation: navigator.geolocation,
+            fetch: window.fetch.bind(window),
+            send,
+            onStatus(phase, message) {
+                status.textContent = message;
+                status.dataset.state = phase;
+                retry.hidden = phase !== 'error';
+                retry.disabled = phase === 'locating' || phase === 'sending';
+            },
+        });
+        const notify = () => notifier.notify(dogOwnerEmail, dogOwnerName, dogName)
+            .catch(error => console.error('Falha ao enviar a localização:', error));
+        retry.addEventListener('click', notify);
+        return notify();
     }
 
     const dogList = document.getElementById('dog-list');
@@ -165,7 +144,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const dog = dogs[dogId];
         if (dogDetails && dog) {
             fetch('templates/dogDetail.html')
-                .then(response => response.text())
+                .then(response => {
+                    if (!response.ok) throw new Error(`Falha ao carregar os detalhes (HTTP ${response.status}).`);
+                    return response.text();
+                })
                 .then(template => {
                     let detailsHTML = template
                         .replace('{photo}', dog.photo)
@@ -205,8 +187,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     getLocationAndSendEmail(dog.owner.email, dog.owner.name, dog.name);
 
                     document.querySelector('.tablinks').click();
+                }).catch(error => {
+                    const status = document.getElementById('location-status');
+                    if (status) status.textContent = error.message;
+                    console.error(error);
                 });
+        } else if (dogDetails) {
+            document.getElementById('location-status').textContent = 'Animal não encontrado. Nenhum e-mail foi enviado.';
         }
+    } else if (document.getElementById('location-status')) {
+        document.getElementById('location-status').textContent = 'Selecione um animal para enviar a localização.';
     }
 });
 
