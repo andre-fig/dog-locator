@@ -21,7 +21,7 @@
     }
 
     function createLocationNotifier(options) {
-        const { geolocation, fetch: fetchLocation, send, onStatus = () => {} } = options;
+        const { geolocation, fetch: fetchLocation, send } = options;
         const gpsTimeout = options.gpsTimeout ?? 10000;
         const networkTimeout = options.networkTimeout ?? 10000;
         let pending = null;
@@ -32,7 +32,9 @@
         const minimumSendInterval = options.minimumSendInterval ?? 1100;
 
         function gpsLocation() {
-            return withTimeout(() => new Promise((resolve, reject) => {
+            // Let the browser wait for permission. Its timeout covers position
+            // acquisition, not the time spent deciding whether to allow GPS.
+            return new Promise((resolve, reject) => {
                 if (!geolocation) return reject(new Error('GPS indisponível.'));
                 geolocation.getCurrentPosition(
                     position => {
@@ -43,7 +45,7 @@
                     reject,
                     { enableHighAccuracy: true, timeout: gpsTimeout, maximumAge: 0 }
                 );
-            }), gpsTimeout + 1000, 'O GPS não respondeu a tempo.');
+            });
         }
 
         async function approximateLocation() {
@@ -71,7 +73,6 @@
             if (sent.has(type)) return;
             const wait = minimumSendInterval - (Date.now() - lastSendStarted);
             if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
-            onStatus('sending', `Enviando a localização ${type} para o tutor…`);
             lastSendStarted = Date.now();
             const result = await withTimeout(() => send('service_dogemail', 'template_dogemail', {
                 to_name: ownerName,
@@ -87,53 +88,42 @@
         }
 
         async function notify(ownerEmail, ownerName, dogName) {
-            try {
-                if (typeof send !== 'function') {
-                    throw new Error('O serviço de e-mail não carregou. Verifique sua conexão e tente novamente.');
-                }
-                onStatus('locating', 'Buscando a localização aproximada por IP…');
-                // Start both lookups independently: the IP email never waits for GPS permission.
-                const approximate = locations.aproximada
-                    ? Promise.resolve({ location: locations.aproximada })
-                    : approximateLocation().then(location => ({ location }), error => ({ error }));
-                const precise = locations.exata
-                    ? Promise.resolve({ location: locations.exata })
-                    : gpsLocation().then(location => ({ location }), () => ({}));
-                const errors = [];
-                const ip = await approximate;
-                if (!sent.has('aproximada')) {
-                    try {
-                        if (ip.error) throw ip.error;
-                        locations.aproximada = ip.location;
-                        await sendLocation(ownerEmail, ownerName, dogName, ip.location, 'aproximada');
-                        onStatus('waiting-gps', 'Localização aproximada enviada. Aguardando a localização precisa, se autorizada…');
-                    } catch (error) {
-                        errors.push(`Localização aproximada: ${error?.text || error?.message || 'falha no envio'}`);
-                    }
-                }
-                const gps = await precise;
-                if (gps.location && !sent.has('exata')) {
-                    try {
-                        locations.exata = gps.location;
-                        await sendLocation(ownerEmail, ownerName, dogName, gps.location, 'exata');
-                    } catch (error) {
-                        errors.push(`Localização precisa: ${error?.text || error?.message || 'falha no envio'}`);
-                    }
-                }
-                if (errors.length) {
-                    const confirmed = sent.has('exata') ? 'A localização precisa foi enviada. '
-                        : sent.has('aproximada') ? 'A localização aproximada foi enviada. ' : '';
-                    throw new Error(confirmed + errors.join(' '));
-                }
-                onStatus('sent', sent.has('exata')
-                    ? 'Localização aproximada enviada; uma segunda notificação com a localização precisa também foi enviada.'
-                    : 'Localização aproximada enviada. GPS não autorizado ou indisponível; nenhum segundo e-mail foi enviado.');
-                return { approximateSent: sent.has('aproximada'), preciseSent: sent.has('exata') };
-            } catch (error) {
-                const message = error?.text || error?.message || 'Não foi possível enviar a localização.';
-                onStatus('error', message);
-                throw error;
+            if (typeof send !== 'function') {
+                throw new Error('O serviço de e-mail não carregou. Verifique sua conexão e tente novamente.');
             }
+            // Start both lookups independently: the IP email never waits for GPS permission.
+            const approximate = locations.aproximada
+                ? Promise.resolve({ location: locations.aproximada })
+                : approximateLocation().then(location => ({ location }), error => ({ error }));
+            const precise = locations.exata
+                ? Promise.resolve({ location: locations.exata })
+                : gpsLocation().then(location => ({ location }), () => ({}));
+            const errors = [];
+            const ip = await approximate;
+            if (!sent.has('aproximada')) {
+                try {
+                    if (ip.error) throw ip.error;
+                    locations.aproximada = ip.location;
+                    await sendLocation(ownerEmail, ownerName, dogName, ip.location, 'aproximada');
+                } catch (error) {
+                    errors.push(`Localização aproximada: ${error?.text || error?.message || 'falha no envio'}`);
+                }
+            }
+            const gps = await precise;
+            if (gps.location && !sent.has('exata')) {
+                try {
+                    locations.exata = gps.location;
+                    await sendLocation(ownerEmail, ownerName, dogName, gps.location, 'exata');
+                } catch (error) {
+                    errors.push(`Localização precisa: ${error?.text || error?.message || 'falha no envio'}`);
+                }
+            }
+            if (errors.length) {
+                const confirmed = sent.has('exata') ? 'A localização precisa foi enviada. '
+                    : sent.has('aproximada') ? 'A localização aproximada foi enviada. ' : '';
+                throw new Error(confirmed + errors.join(' '));
+            }
+            return { approximateSent: sent.has('aproximada'), preciseSent: sent.has('exata') };
         }
 
         return {

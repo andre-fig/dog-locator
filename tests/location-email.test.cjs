@@ -4,16 +4,15 @@ const { createLocationNotifier } = require('../location-email.js');
 const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 const denied = { getCurrentPosition: (_, reject) => reject({ code: 1 }) };
 function setup(overrides = {}) {
-    const calls = [], statuses = [];
+    const calls = [];
     const notifier = createLocationNotifier({
         geolocation: { getCurrentPosition: success => success({ coords: { latitude: -22.9, longitude: -43.1 } }) },
         fetch: async () => ({ ok: true, json: async () => ({ loc: '-22.8,-43.0' }) }),
         send: async (...args) => { calls.push(args); return { status: 200, text: 'OK' }; },
-        onStatus: (...args) => statuses.push(args),
         minimumSendInterval: 0,
         ...overrides,
     });
-    return { notifier, calls, statuses };
+    return { notifier, calls };
 }
 const notify = s => s.notifier.notify('owner@example.com', 'Tutor', 'Apolo');
 const payloads = s => s.calls.map(call => call[2]);
@@ -26,7 +25,6 @@ test('opening the page sends IP first, then a second GPS email with the existing
         { to_name: 'Tutor', email_to: 'owner@example.com', location: '-22.9,-43.1', location_type: 'exata', dog_name: 'Apolo' },
     ]);
     for (const call of s.calls) assert.deepEqual(call.slice(0, 2), ['service_dogemail', 'template_dogemail']);
-    assert.equal(s.statuses.at(-1)[0], 'sent');
 });
 test('the IP email does not wait for the GPS permission response', async () => {
     let accept;
@@ -55,19 +53,32 @@ test('denying GPS sends only the IP email', async () => {
 test('no GPS sends only the IP email', async () => {
     const s = setup({ geolocation: undefined }); await notify(s); assert.equal(s.calls.length, 1);
 });
-test('a hung GPS cannot prevent the IP email or trigger duplicate sends', async () => {
+test('permission granted after the old watchdog deadline still sends the GPS email', async () => {
     let callback;
-    const s = setup({ gpsTimeout: 10, geolocation: { getCurrentPosition: cb => { callback = cb; } } });
-    const pending = notify(s); await waitFor(() => s.calls.length === 1);
-    await pending;
+    const s = setup({ gpsTimeout: 10, geolocation: { getCurrentPosition: (cb, _, options) => {
+        callback = cb;
+        assert.equal(options.timeout, 10); // Native acquisition timeout remains in place.
+    } } });
+    let finished = false;
+    const pending = notify(s).then(result => { finished = true; return result; });
+    await waitFor(() => s.calls.length === 1);
+    await pause(1100); // Exceeds the previous gpsTimeout + 1000 watchdog.
+    assert.equal(finished, false);
+    assert.equal(s.calls.length, 1);
     callback({ coords: { latitude: 1, longitude: 2 } });
-    await pause(1); assert.equal(s.calls.length, 1);
+    await pending;
+    assert.deepEqual(payloads(s).map(p => p.location_type), ['aproximada', 'exata']);
+    assert.equal(payloads(s)[1].location, '1,2');
+});
+test('a native GPS timeout keeps the already sent IP email', async () => {
+    const s = setup({ geolocation: { getCurrentPosition: (_, error) => error({ code: 3 }) } });
+    assert.deepEqual(await notify(s), { approximateSent: true, preciseSent: false });
+    assert.equal(s.calls.length, 1);
 });
 test('failed IP lookup does not suppress valid GPS mail and reports the partial failure', async () => {
     const s = setup({ fetch: async () => ({ ok: false, status: 429 }) });
     await assert.rejects(notify(s), /precisa foi enviada.*HTTP 429/);
     assert.equal(s.calls.length, 1); assert.equal(payloads(s)[0].location_type, 'exata');
-    assert.equal(s.statuses.at(-1)[0], 'error');
 });
 test('invalid IP coordinates never generate mail', async () => {
     for (const loc of [undefined, '', '1', ',2', ' ,2', '91,10', '1,181', 'NaN,2', '1,2,3']) {
@@ -110,7 +121,7 @@ test('simultaneous requests share the same two emails, and confirmed emails are 
 });
 test('an unconfirmed response is not reported as success', async () => {
     const s = setup({ geolocation: denied, send: async () => ({ status: 500 }) });
-    await assert.rejects(notify(s), /500/); assert.equal(s.statuses.at(-1)[0], 'error');
+    await assert.rejects(notify(s), /500/);
 });
 test('hung IP lookup cannot block valid GPS indefinitely', async () => {
     const s = setup({ networkTimeout: 10, fetch: () => new Promise(() => {}) });
@@ -126,4 +137,12 @@ test('default interval prevents two EmailJS requests within one second', async (
     const times = [];
     const s = setup({ minimumSendInterval: undefined, send: async () => { times.push(Date.now()); return { status: 200 }; } });
     await notify(s); assert.ok(times[1] - times[0] >= 1000);
+});
+
+test('the page has no delivery notifications or retry controls', () => {
+    const { readFileSync } = require('node:fs');
+    const html = readFileSync(require('node:path').join(__dirname, '../dog.html'), 'utf8');
+    const app = readFileSync(require('node:path').join(__dirname, '../script.js'), 'utf8');
+    assert.doesNotMatch(html, /location-status|retry-location|location-notification/);
+    assert.doesNotMatch(app, /location-status|retry-location|onStatus/);
 });

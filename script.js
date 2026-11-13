@@ -93,8 +93,6 @@ document.addEventListener('DOMContentLoaded', function() {
     ];
 
     function getLocationAndSendEmail(dogOwnerEmail, dogOwnerName, dogName) {
-        const status = document.getElementById('location-status');
-        const retry = document.getElementById('retry-location');
         let send;
         if (window.emailjs) {
             window.emailjs.init({ publicKey: '-5x7LOKtJUEZZVEH2' });
@@ -104,16 +102,9 @@ document.addEventListener('DOMContentLoaded', function() {
             geolocation: navigator.geolocation,
             fetch: window.fetch.bind(window),
             send,
-            onStatus(phase, message) {
-                status.textContent = message;
-                status.dataset.state = phase;
-                retry.hidden = phase !== 'error';
-                retry.disabled = phase === 'locating' || phase === 'sending';
-            },
         });
         const notify = () => notifier.notify(dogOwnerEmail, dogOwnerName, dogName)
             .catch(error => console.error('Falha ao enviar a localização:', error));
-        retry.addEventListener('click', notify);
         return notify();
     }
 
@@ -188,15 +179,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     document.querySelector('.tablinks').click();
                 }).catch(error => {
-                    const status = document.getElementById('location-status');
-                    if (status) status.textContent = error.message;
+                    dogDetails.textContent = 'Não foi possível carregar os detalhes do animal.';
                     console.error(error);
                 });
         } else if (dogDetails) {
-            document.getElementById('location-status').textContent = 'Animal não encontrado. Nenhum e-mail foi enviado.';
+            dogDetails.textContent = 'Animal não encontrado.';
         }
-    } else if (document.getElementById('location-status')) {
-        document.getElementById('location-status').textContent = 'Selecione um animal para enviar a localização.';
+
     }
 });
 
